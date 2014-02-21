@@ -9,6 +9,8 @@ import org.apache.oro.text.regex.Perl5Compiler;
 import org.apache.oro.text.regex.Perl5Matcher;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.plugins.cucumber.steps.validvalues.ValidVariableValuesAllValid;
+import org.jetbrains.plugins.cucumber.steps.validvalues.ValidVariableValues;
 
 import java.util.List;
 
@@ -63,6 +65,10 @@ public abstract class AbstractStepDefinition {
     catch (MalformedPatternException e) {
       return null;
     }
+  }
+
+  public ValidVariableValues getPossibleVariableTypes(String variableName) {
+    return new ValidVariableValuesAllValid();
   }
 
   @Nullable

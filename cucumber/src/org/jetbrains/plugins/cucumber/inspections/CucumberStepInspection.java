@@ -21,6 +21,7 @@ import org.jetbrains.plugins.cucumber.psi.impl.GherkinScenarioOutlineImpl;
 import org.jetbrains.plugins.cucumber.steps.AbstractStepDefinition;
 import org.jetbrains.plugins.cucumber.steps.CucumberStepsIndex;
 import org.jetbrains.plugins.cucumber.steps.reference.CucumberStepReference;
+import org.jetbrains.plugins.cucumber.steps.validvalues.ValidVariableValues;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,44 +51,48 @@ public class CucumberStepInspection extends GherkinInspection implements UnfairL
   @NotNull
   @Override
   public PsiElementVisitor buildVisitor(@NotNull final ProblemsHolder holder, final boolean isOnTheFly) {
-    return new GherkinElementVisitor() {
+    return new StepDefinitionVisitor() {
+
       @Override
-      public void visitStep(GherkinStep step) {
-        super.visitStep(step);
+      protected void visitExistingDefinition(AbstractStepDefinition definition, GherkinStep step, CucumberStepReference reference) {
 
-        final PsiElement parent = step.getParent();
-        if (parent instanceof GherkinStepsHolder) {
-          final PsiReference[] references = step.getReferences();
-          if (references.length != 1 || !(references[0] instanceof CucumberStepReference)) return;
-
-          CucumberStepReference reference = (CucumberStepReference)references[0];
-          final AbstractStepDefinition definition = reference.resolveToDefinition();
-          if (definition == null) {
-            CucumberCreateStepFix fix = null;
-            if (CucumberStepsIndex.getInstance(step.getProject()).getExtensionCount() > 0) {
-              fix = new CucumberCreateStepFix();
-            }
-            holder.registerProblem(reference.getElement(), reference.getRangeInElement(), CucumberBundle.message(
-              "cucumber.inspection.undefined.step.msg.name") + " #loc #ref", fix);
-          }
-          else if (isOnTheFly) {
-            // highlighting for regexp params
-            final List<TextRange> parameterRanges = GherkinPsiUtil.buildParameterRanges(step, definition,
-                                                                                        reference.getRangeInElement().getStartOffset());
-            if (parameterRanges == null) return;
-            for (TextRange range : parameterRanges) {
-              if (range.getLength() > 0) {
-                registerHighlighting(GherkinHighlighter.REGEXP_PARAMETER, step, range, holder);
-              }
-            }
-          }
-
-          if (isOnTheFly) {
-            // highlighting for scenario outline params
-            highlightOutlineParams(step, reference, holder);
-          }
+        if (!isOnTheFly) {
+          return;
         }
+
+        // highlighting for regexp params
+        final List<TextRange> parameterRanges = GherkinPsiUtil.buildParameterRanges(step, definition,
+                                                                                    reference.getRangeInElement().getStartOffset());
+
+        if (parameterRanges == null) return;
+
+        for (TextRange range : parameterRanges) {
+          if (range.getLength() > 0) {
+
+            registerHighlighting(GherkinHighlighter.REGEXP_PARAMETER, step, range, holder);
+          }
+
+        }
+
+        highlightOutlineParams(step, reference, holder);
+
       }
+
+      @Override
+      protected void visitNonExistingDefinition(GherkinStep step, CucumberStepReference reference) {
+        CucumberCreateStepFix fix = null;
+        if (CucumberStepsIndex.getInstance(step.getProject()).getExtensionCount() > 0) {
+          fix = new CucumberCreateStepFix();
+        }
+        holder.registerProblem(reference.getElement(), reference.getRangeInElement(),
+                               CucumberBundle.message("cucumber.inspection.undefined.step.msg.name") + " #loc #ref", fix);
+
+        if (isOnTheFly) {
+          highlightOutlineParams(step, reference, holder);
+        }
+
+      }
+
     };
   }
 
@@ -167,11 +172,11 @@ public class CucumberStepInspection extends GherkinInspection implements UnfairL
     final List<String> possibleSubstitutions = step.getParamsSubstitutions();
     if (!possibleSubstitutions.isEmpty()) {
       // get step definition
-      final GherkinStepsHolder holder = step.getStepHolder();
+
       // if step is in Scenario Outline
-      if (holder instanceof GherkinScenarioOutlineImpl) {
+      if (belongsToScenarioOutline(step)) {
         // then get header cell
-        final GherkinScenarioOutlineImpl outline = (GherkinScenarioOutlineImpl)holder;
+        final GherkinScenarioOutlineImpl outline = (GherkinScenarioOutlineImpl)step.getStepHolder();
         final List<GherkinExamplesBlock> examplesBlocks = outline.getExamplesBlocks();
         if (examplesBlocks.isEmpty()) {
           return null;
@@ -201,4 +206,8 @@ public class CucumberStepInspection extends GherkinInspection implements UnfairL
     }
     return null;
   }
+
+    private static boolean belongsToScenarioOutline(GherkinStep step) {
+        return step.getStepHolder() instanceof GherkinScenarioOutlineImpl;
+    }
 }

@@ -40,6 +40,10 @@
                      key="cucumber.inspection.undefined.step.name" groupKey="cucumber.inspection.group.name" enabledByDefault="true" level="WARNING"
                      implementationClass="org.jetbrains.plugins.cucumber.inspections.CucumberStepInspection" unfair="true"/>
 
+    <localInspection language="Gherkin" shortName="CucumberInvalidParamterValue" bundle="org.jetbrains.plugins.cucumber.CucumberBundle"
+                     key="cucumber.inspection.invalid.parameter.value.name" groupKey="cucumber.inspection.group.name" enabledByDefault="true" level="WARNING"
+                     implementationClass="org.jetbrains.plugins.cucumber.inspections.CucumberInvalidParamterValueInspection" unfair="true"/>
+
     <localInspection language="Gherkin" shortName="CucumberExamplesColon" bundle="org.jetbrains.plugins.cucumber.CucumberBundle"
                      key="inspection.missed.colon.example.name" groupKey="cucumber.inspection.group.name" enabledByDefault="true"
                      level="ERROR" implementationClass="org.jetbrains.plugins.cucumber.inspections.CucumberExamplesColonInspection"/>
