@@ -44,7 +44,7 @@ public class JavaStepDefinition extends AbstractStepDefinition {
         if (element instanceof PsiMethod) {
             PsiParameter[] parameters = ((PsiMethod)element).getParameterList().getParameters();
             for (PsiParameter parameter : parameters) {
-                if (variableName.equalsIgnoreCase(parameter.getName())) {
+                if (variableName.equalsIgnoreCase(parameter.getName()) && parameter.getType() instanceof PsiClassReferenceType) {
                     PsiClassReferenceType psiClassReferenceType = (PsiClassReferenceType) parameter.getType();
                     PsiClass psiClass = psiClassReferenceType.resolve();
                     if (psiClass != null && psiClass.isEnum()) {

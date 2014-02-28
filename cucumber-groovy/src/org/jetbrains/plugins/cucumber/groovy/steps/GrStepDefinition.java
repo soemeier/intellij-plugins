@@ -58,7 +58,7 @@ public class GrStepDefinition extends AbstractStepDefinition implements PomNamed
   }
 
   private GrParameter[] getParameters(GrMethodCall element) {
-    GrClosableBlock[] closures = ((GrMethodCall)element).getClosureArguments();
+    GrClosableBlock[] closures = element.getClosureArguments();
     assert closures.length == 1;
     return closures[0].getParameterList().getParameters();
   }
@@ -71,7 +71,7 @@ public class GrStepDefinition extends AbstractStepDefinition implements PomNamed
     if (element instanceof GrMethodCallExpression) {
       GrParameter[] parameters = getParameters((GrMethodCall)element);
       for (GrParameter parameter : parameters) {
-        if (variableName.equalsIgnoreCase(parameter.getName())) {
+        if (variableName.equalsIgnoreCase(parameter.getName()) && parameter.getType() instanceof GrClassReferenceType) {
           GrClassReferenceType grClassReferenceType = (GrClassReferenceType)parameter.getType();
           PsiClass psiClass = grClassReferenceType.resolve();
           if (psiClass != null && psiClass.isEnum()) {
