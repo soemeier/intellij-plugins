@@ -88,8 +88,9 @@ public class CucumberInvalidParameterValueFix implements LocalQuickFix {
                     @Override
                     protected void run() throws Throwable {
                         String text = step.getText();
-                        String finalText = text.substring(0, range.getStartOffset()) + selectedValue + text.substring(range.getEndOffset());
 
+                        String finalText = text.substring(0, range.getStartOffset()) + selectedValue + text.substring(range.getEndOffset());
+                        
                         final PsiElement[] elements = GherkinElementFactory.getTopLevelElements(project, finalText);
                         step.deleteChildRange(step.getFirstChild(), step.getLastChild());
                         for (PsiElement element : elements) {

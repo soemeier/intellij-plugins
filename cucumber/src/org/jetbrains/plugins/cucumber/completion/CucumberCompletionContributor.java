@@ -4,9 +4,12 @@ import com.intellij.codeInsight.TailType;
 import com.intellij.codeInsight.completion.*;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
+import com.intellij.codeInsight.lookup.LookupItem;
 import com.intellij.codeInsight.lookup.TailTypeDecorator;
+import com.intellij.codeInsight.template.ExpressionContext;
 import com.intellij.codeInsight.template.TemplateBuilder;
 import com.intellij.codeInsight.template.TemplateBuilderFactory;
+import com.intellij.codeInsight.template.impl.ConstantNode;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
@@ -18,6 +21,7 @@ import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.cucumber.psi.*;
 import org.jetbrains.plugins.cucumber.psi.impl.GherkinExamplesBlockImpl;
 import org.jetbrains.plugins.cucumber.psi.impl.GherkinScenarioOutlineImpl;
@@ -50,8 +54,12 @@ public class CucumberCompletionContributor extends CompletionContributor {
   private static final int SCENARIO_OUTLINE_KEYWORD_PRIORITY = 60;
   public static final Pattern POSSIBLE_GROUP_PATTERN = Pattern.compile("\\(([^\\)]*)\\)");
   public static final Pattern QUESTION_MARK_PATTERN = Pattern.compile("([^\\\\])\\?:?");
-  public static final Pattern PARAMETERS_PATTERN = Pattern.compile("<string>|<number>|<param>");
+  public static final Pattern PARAMETERS_PATTERN = Pattern.compile("<string>|<number>|<param>|" + POSSIBLE_GROUP_PATTERN);
   public static final String INTELLIJ_IDEA_RULEZZZ = "IntellijIdeaRulezzz";
+  public static final String REPLACED_OPEN_BRACKET = "&%@";
+  public static final String REPLACED_CLOSE_BRACKET = "@&%";
+  public static final Pattern REPLACED_OPEN_BRACKET_PATTERN = Pattern.compile("(" + REPLACED_OPEN_BRACKET + ")");
+  public static final Pattern REPLACED_CLOSED_BRACKET_PATTERN = Pattern.compile("(" + REPLACED_CLOSE_BRACKET + ")");
 
   public CucumberCompletionContributor() {
     final PsiElementPattern.Capture<PsiElement> inScenario = psiElement().inside(psiElement().withElementType(GherkinElementTypes.SCENARIOS));
@@ -210,6 +218,12 @@ public class CucumberCompletionContributor extends CompletionContributor {
           text = text.substring(0, text.length() - 1);
         }
         text = StringUtil.replace(text, "\\\"", "\"");
+        //Escaped brackets must not be replaced by later process. Therefore it is taken
+        text = StringUtil.replace(text, "\\(", REPLACED_OPEN_BRACKET);
+        text = StringUtil.replace(text, "\\)", REPLACED_CLOSE_BRACKET);
+
+
+
         for (Map.Entry<String, String> group : GROUP_TYPE_MAP.entrySet()) {
           text = StringUtil.replace(text, group.getKey(), group.getValue());
         }
@@ -218,35 +232,78 @@ public class CucumberCompletionContributor extends CompletionContributor {
           text = text.replaceAll(group.getKey(), group.getValue());
         }
 
-        final List<TextRange> ranges = new ArrayList<TextRange>();
+        final List<RangeWithPossibleValues> ranges = new ArrayList<RangeWithPossibleValues>();
         Matcher m = QUESTION_MARK_PATTERN.matcher(text);
         if (m.find()) {
           text = m.replaceAll("$1");
         }
 
-        m = POSSIBLE_GROUP_PATTERN.matcher(text);
-        while (m.find()) {
-          text = m.replaceAll("$1");
-        }
-
         m = PARAMETERS_PATTERN.matcher(text);
+        int parameterIndex = 0;
+        int offset = 0;
         while (m.find()) {
-          ranges.add(new TextRange(m.start(), m.end()));
+          if (m.group().startsWith("(")) {
+            ranges.add(new RangeWithPossibleValues(new TextRange(m.start() - offset, m.end() -offset -2),
+                                                   determinePossibleVariableTypes(parameterIndex, definition)));
+            offset += 2;
+          } else {
+            ranges.add(new RangeWithPossibleValues(new TextRange(m.start() - offset, m.end() - offset),
+                                                   determinePossibleVariableTypes(parameterIndex, definition)));
+          }
+          parameterIndex++;
         }
+        text = StringUtil.replace(text,"(", "");
+        text = StringUtil.replace(text, ")", "");
+
+        m = REPLACED_OPEN_BRACKET_PATTERN.matcher(text);
+
+        text = normalizeReplacedBracket(ranges, m, "(");
+
+        m = REPLACED_CLOSED_BRACKET_PATTERN.matcher(text);
+
+        text = normalizeReplacedBracket(ranges, m, ")");
 
         final PsiElement element = definition.getElement();
         final LookupElementBuilder lookup = element != null 
                                             ? LookupElementBuilder.create(element, text).bold()
                                             : LookupElementBuilder.create(text);
+
         result.addElement(lookup.withInsertHandler(new StepInsertHandler(ranges)));
       }
     }
   }
 
-  private static class StepInsertHandler implements InsertHandler<LookupElement> {
-    private final List<TextRange> ranges;
+  private static String normalizeReplacedBracket(List<RangeWithPossibleValues> ranges, Matcher m, String bracket) {
+    String text;
+    while (m.find()) {
+      for (RangeWithPossibleValues range : ranges) {
+        if (range.getRange().getStartOffset() > m.start()) {
+          range.setRange(new TextRange(range.getRange().getStartOffset() -2, range.getRange().getEndOffset() -2));
+        } else if (range.getRange().getEndOffset() > m.start()) {
+          range.setRange(new TextRange(range.getRange().getStartOffset(), range.getRange().getEndOffset() -2));
+        }
 
-    private StepInsertHandler(List<TextRange> ranges) {
+      }
+    }
+    text = m.replaceAll(bracket);
+    return text;
+  }
+
+
+  @Nullable
+  private static List<String> determinePossibleVariableTypes(int parameterIndex, AbstractStepDefinition definition) {
+    if (definition.getVariableNames().size()<= parameterIndex) {
+      return null;
+    }
+    String parameterName = definition.getVariableNames().get(parameterIndex);
+    return definition.getPossibleVariableTypes(parameterName).getValidValues();
+
+  }
+
+  private static class StepInsertHandler implements InsertHandler<LookupElement> {
+    private final List<RangeWithPossibleValues> ranges;
+
+    private StepInsertHandler(List<RangeWithPossibleValues> ranges) {
       this.ranges = ranges;
     }
 
@@ -259,14 +316,32 @@ public class CucumberCompletionContributor extends CompletionContributor {
           final TemplateBuilder builder = TemplateBuilderFactory.getInstance().createTemplateBuilder(step);
           int off = context.getStartOffset() - step.getTextRange().getStartOffset();
           final String stepText = step.getText();
-          for (TextRange groupRange : ranges) {
-            final TextRange shiftedRange = groupRange.shiftRight(off);
+          for (RangeWithPossibleValues groupRangeWithPossibleValue : ranges) {
+            final TextRange shiftedRange = groupRangeWithPossibleValue.getRange().shiftRight(off);
             final String matchedText = shiftedRange.substring(stepText);
-            builder.replaceRange(shiftedRange, matchedText);
+
+            builder.replaceRange(shiftedRange.shiftRight(step.getTextRange().getStartOffset()),
+                                 createExpression(matchedText, groupRangeWithPossibleValue.getPossibleValueForRange()));
           }
           builder.run(context.getEditor(), false);
         }
       }
+    }
+
+    private static ConstantNode createExpression(String matchedText, @Nullable final List<String> possibleValueForRange) {
+      return new ConstantNode(matchedText) {
+        @Override
+        public LookupElement[] calculateLookupItems(ExpressionContext context) {
+          if (possibleValueForRange != null) {
+            LookupElement[] lookupElements = new LookupElement[possibleValueForRange.size()];
+            for (int i = 0; i < possibleValueForRange.size(); i++) {
+              lookupElements[i] = LookupItem.fromString(possibleValueForRange.get(i));
+            }
+            return lookupElements;
+          }
+          return new LookupElement[]{};
+        }
+      };
     }
   }
 }
